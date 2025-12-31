@@ -1,0 +1,133 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: cifar10-real-pipeline-
+  namespace: argo
+  labels:
+    pipeline: cifar10-production
+spec:
+  entrypoint: mlops-pipeline
+  serviceAccountName: argo
+  
+  templates:
+  - name: mlops-pipeline
+    steps:
+    # Step 1: Feature Engineering (uses existing processed data)
+    - - name: feature-engineering
+        template: run-feature-engineering
+    
+    # Step 2: Distributed Training with PyTorchJob
+    - - name: distributed-training
+        template: submit-pytorchjob
+    
+    # Step 3: Wait for training to complete
+    - - name: wait-training
+        template: check-training-status
+    
+    # Step 4: Verify model saved
+    - - name: verify-model-saved
+        template: check-model-in-minio
+
+  # Feature Engineering - Verify processed data exists
+  - name: run-feature-engineering
+    container:
+      image: python:3.10-slim
+      command: [sh, -c]
+      args:
+        - |
+          pip install minio --quiet
+          python3 << 'EOF'
+          from minio import Minio
+          
+          client = Minio(
+              "minio.minio.svc.cluster.local:9000",
+              access_key="minioadmin",
+              secret_key="minioadmin",
+              secure=False
+          )
+          
+          # Check if processed data exists
+          try:
+              stat = client.stat_object("processed-data", "cifar10-processed.tar.gz")
+              print(f"✅ Processed data found: {stat.size / (1024*1024):.2f} MB")
+          except:
+              print("❌ Processed data not found!")
+              exit(1)
+          EOF
+
+  # Submit PyTorchJob for training
+  - name: submit-pytorchjob
+    resource:
+      action: create
+      manifest: |
+        apiVersion: kubeflow.org/v1
+        kind: PyTorchJob
+        metadata:
+          name: pipeline-training-job
+          namespace: default
+        spec:
+          pytorchReplicaSpecs:
+            Master:
+              replicas: 1
+              restartPolicy: OnFailure
+              template:
+                spec:
+                  containers:
+                  - name: pytorch
+                    image: pytorch-distributed-training:latest
+                    imagePullPolicy: Never
+                    env:
+                    - name: MINIO_ENDPOINT
+                      value: "minio.minio.svc.cluster.local:9000"
+                    - name: MLFLOW_TRACKING_URI
+                      value: "http://mlflow.mlflow.svc.cluster.local:5000"
+                    resources:
+                      limits:
+                        cpu: "2"
+                        memory: "3Gi"
+                      requests:
+                        cpu: "1"
+                        memory: "2Gi"
+
+  # Wait and check training status
+  - name: check-training-status
+    container:
+      image: bitnami/kubectl:latest
+      command: [sh, -c]
+      args:
+        - |
+          echo "⏳ Waiting for training to complete..."
+          kubectl wait --for=condition=Succeeded pytorchjob/pipeline-training-job -n default --timeout=1800s
+          echo "✅ Training completed successfully!"
+
+  # Verify model was saved to MinIO
+  - name: check-model-in-minio
+    container:
+      image: python:3.10-slim
+      command: [sh, -c]
+      args:
+        - |
+          pip install minio --quiet
+          python3 << 'EOF'
+          from minio import Minio
+          import time
+          
+          client = Minio(
+              "minio.minio.svc.cluster.local:9000",
+              access_key="minioadmin",
+              secret_key="minioadmin",
+              secure=False
+          )
+          
+          # Check if model exists
+          try:
+              stat = client.stat_object("models", "resnet18_cifar10.pth")
+              print(f"✅ Model saved successfully!")
+              print(f"   Size: {stat.size / (1024*1024):.2f} MB")
+              print(f"   Location: models/resnet18_cifar10.pth")
+              print(f"\n🎉 PIPELINE COMPLETE - Model ready for deployment!")
+          except Exception as e:
+              print(f"❌ Model not found: {e}")
+              exit(1)
+          EOF
+          
