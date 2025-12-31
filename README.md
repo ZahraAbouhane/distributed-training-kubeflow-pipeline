@@ -783,6 +783,36 @@ curl $SERVICE_URL/v1/models/cifar10
 
 ### Common Issues and Solutions
 
+### 0. Permission Errors
+
+**Symptom:**
+```
+Access denied
+Permission denied
+```
+
+**Solution:**
+
+**For Docker/Minikube issues:**
+1. Ensure Docker Desktop is running
+2. Make sure you're in `docker-users` group:
+   - Search "Computer Management"
+   - Local Users and Groups → Groups → docker-users
+   - Add your user account
+   - **Restart computer**
+
+**For WSL2 configuration:**
+If you can't create `.wslconfig`:
+1. Right-click Notepad → Run as Administrator
+2. Create file: `C:\Users\<YourUsername>\.wslconfig`
+3. Paste configuration
+4. Save and close
+
+**For kubectl/minikube commands:**
+These should NOT require admin. If they do:
+1. Reinstall Minikube to user directory (not Program Files)
+2. Or run: `minikube config set WantUpdateNotification false`
+
 #### 1. Pod Stuck in Pending
 
 **Symptom:**
@@ -1025,8 +1055,8 @@ kubectl delete pod <pod-name> -n <namespace> --force --grace-period=0
 
 ## 📞 Contact
 
-- **Zahra ABOUHANE:** [your-email]
-- **Yassine BAZGOUR:** [your-email]
+- **Zahra ABOUHANE:** [abouhanezahra@gmail.com]
+- **Yassine BAZGOUR:** [yassine.bazgour@gmail.com]
 - **Repository:** https://github.com/yourusername/distributed-training-kubeflow-pipeline
 
 ---
@@ -1034,7 +1064,7 @@ kubectl delete pod <pod-name> -n <namespace> --force --grace-period=0
 ## 🚀 Quick Start
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/distributed-training-kubeflow-pipeline.git
+git clone https://github.com/ZahraAbouhane/distributed-training-kubeflow-pipeline.git
 cd distributed-training-kubeflow-pipeline
 
 # Start cluster
